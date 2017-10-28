@@ -3925,8 +3925,7 @@ vdbeCompareMemString(const Mem * pMem1, const Mem * pMem2,
 		     u8 * prcErr)	/* If an OOM occurs, set to SQLITE_NOMEM */
 {
 	(void)prcErr;
-	(void)pColl;
-	struct coll * collation = collation_by_name("unicode", strlen("unicode"));
+	struct coll * collation = pColl->xCmp;
 	return collation->cmp(pMem1->z, (size_t)pMem1->n,
 			      pMem2->z, (size_t)pMem2->n, collation);
 }
@@ -4101,9 +4100,8 @@ sqlite3MemCompare(const Mem * pMem1, const Mem * pMem2, const CollSeq * pColl)
 		 * the user deletes the collation sequence after the vdbe program is
 		 * compiled (this was not always the case).
 		 */
-		assert(!pColl || pColl->xCmp);
 
-		if (1) {
+		if (pColl) {
 			return vdbeCompareMemString(pMem1, pMem2, pColl, 0);
 		}
 		/* If a NULL pointer was passed as the collate function, fall through
