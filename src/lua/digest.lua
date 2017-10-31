@@ -7,7 +7,9 @@ local bit = require('bit')
 ffi.cdef[[
     /* internal implementation */
     unsigned char *SHA1internal(const unsigned char *d, size_t n, unsigned char *md);
-
+    unsigned char *
+    PBKDF2internal(const char *password, size_t password_size,
+			   const unsigned char *salt, size_t salt_size);
     /* from libc */
     int snprintf(char *str, size_t size, const char *format, ...);
 
@@ -215,7 +217,23 @@ local m = {
         return ffi.string(buf, n)
     end,
 
-    murmur = PMurHash
+    murmur = PMurHash,
+
+    pbkdf2 = function(pass, salt)
+        if type(pass) ~= 'string' or type(salt) ~= 'string' then
+            error("Usage: digest.pbkdf2(pass, salt)")
+        end
+        local r = ffi.C.PBKDF2internal(pass, #pass, salt, #salt)
+        return ffi.string(r)
+    end,
+
+    pbkdf2_hex = function(pass, salt)
+        if type(pass) ~= 'string' or type(salt) ~= 'string' then
+            error("Usage: digest.pbkdf2_hex(pass, salt)")
+        end
+        local r = ffi.C.PBKDF2internal(pass, #pass, salt, #salt)
+        return string.hex(ffi.string(r))
+    end
 }
 
 for digest, name in pairs(digest_shortcuts) do

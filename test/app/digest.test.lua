@@ -161,6 +161,13 @@ b = digest.base64_encode(string.rep('a', 100), { nowrap = true })
 b
 digest.base64_decode(b)
 
-
+digest.pbkdf2("password", "salt")
+digest.pbkdf2_hex("password", "salt")
+s, err = pcall(digest.pbkdf2, 12, "salt")
+s
+err:match("Usage")
+s, err = pcall(digest.pbkdf2_hex, 12, "salt")
+s
+err:match("Usage")
 digest = nil
 test_run:cmd("clear filter")

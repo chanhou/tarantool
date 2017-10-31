@@ -9,6 +9,7 @@ base64_decode
 base64_encode
 base64_bufsize
 SHA1internal
+PBKDF2internal
 guava
 random_bytes
 fiber_time

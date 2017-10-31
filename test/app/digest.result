@@ -506,6 +506,36 @@ digest.base64_decode(b)
 ---
 - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ...
+digest.pbkdf2("password", "salt")
+---
+- !!binary A5Si7eMyyaE+uC6bJGMWBMMd+Xi04vD70sVJlE+deaU2zuqbksYXDLvwFT7zOk/1cyHhe3pfrcM/cCPd0yXaR0R1O21hVx3Lo0rpYJkGjOo5oHpDAyY883SbX7yTIilGo5h/dfLWruoCSsxPlaDW5xQc2wsfEgZQMKwWlQf5Gw==
+...
+digest.pbkdf2_hex("password", "salt")
+---
+- 0394a2ede332c9a13eb82e9b24631604c31df978b4e2f0fbd2c549944f9d79a536ceea9b92c6170cbbf0153ef33a4ff57321e17b7a5fadc33f7023ddd325da4744753b6d61571dcba34ae96099068cea39a07a4303263cf3749b5fbc93222946a3987f75f2d6aeea024acc4f95a0d6e7141cdb0b1f12065030ac169507f91b
+...
+s, err = pcall(digest.pbkdf2, 12, "salt")
+---
+...
+s
+---
+- false
+...
+err:match("Usage")
+---
+- Usage
+...
+s, err = pcall(digest.pbkdf2_hex, 12, "salt")
+---
+...
+s
+---
+- false
+...
+err:match("Usage")
+---
+- Usage
+...
 digest = nil
 ---
 ...

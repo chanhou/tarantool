@@ -32,6 +32,11 @@
 #include <string.h>
 #include <lua/digest.h>
 #include <third_party/sha1.h>
+#include <openssl/evp.h>
+#include <coio_task.h>
+
+#define PBKDF2_ITERATIONS 100000
+#define PBKDF2_SIZEBUF 128
 
 unsigned char *
 SHA1internal(const unsigned char *d, size_t n, unsigned char *md)
@@ -45,4 +50,31 @@ SHA1internal(const unsigned char *d, size_t n, unsigned char *md)
 	if (md)
 		memcpy(md, result, 20);
 	return result;
+}
+
+static ssize_t
+digest_pbkdf2_f(va_list ap)
+{
+	char *password = va_arg(ap, char *);
+	size_t password_size = va_arg(ap, size_t);
+	const unsigned char *salt = va_arg(ap, unsigned char *);
+	size_t salt_size = va_arg(ap, size_t);
+	unsigned char *digest = va_arg(ap, unsigned char *);
+	if (PKCS5_PBKDF2_HMAC(password, password_size, salt, salt_size, PBKDF2_ITERATIONS,
+					EVP_sha256(), PBKDF2_SIZEBUF - 1, digest) == 0) {
+		return -1;
+	}
+	digest[PBKDF2_SIZEBUF - 1] = 0;
+	return 0;
+}
+
+unsigned char *
+PBKDF2internal(const char *password, size_t password_size,
+			   const unsigned char *salt, size_t salt_size)
+{
+	static __thread unsigned char digest[PBKDF2_SIZEBUF];
+	if (coio_call(digest_pbkdf2_f, password, password_size, salt, salt_size, digest) < 0) {
+		return (unsigned char *)"";
+	}
+	return digest;
 }
