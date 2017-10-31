@@ -7,7 +7,10 @@ local bit = require('bit')
 ffi.cdef[[
     /* internal implementation */
     unsigned char *SHA1internal(const unsigned char *d, size_t n, unsigned char *md);
-
+    unsigned char *
+    PBKDF2internal(const char *password, size_t password_size,
+			   const unsigned char *salt, size_t salt_size,
+				int num_iterations, int digest_len);
     /* from libc */
     int snprintf(char *str, size_t size, const char *format, ...);
 
@@ -141,6 +144,25 @@ setmetatable(CRC32, {
     end
 })
 
+local pbkdf2 = function(pass, salt, iters, digest_len)
+    if type(pass) ~= 'string' or type(salt) ~= 'string' then
+        error("Usage: digest.pbkdf2(pass, salt[,iters][,digest_len])")
+    end
+    if iters and type(iters) ~= 'number' then
+        error("iters must number")
+    end
+    if digest_len and type(digest_len) ~= 'number' then
+        error("digest_len must number")
+    end
+    iters = iters or 100000
+    digest_len = digest_len or 128
+    if digest_len > 128 then
+        error("too big digest size")
+    end
+    local r = ffi.C.PBKDF2internal(pass, #pass, salt, #salt, iters, digest_len)
+    return ffi.string(r)
+end
+
 local m = {
     base64_encode = function(bin, options)
         if type(bin) ~= 'string' or
@@ -215,7 +237,16 @@ local m = {
         return ffi.string(buf, n)
     end,
 
-    murmur = PMurHash
+    murmur = PMurHash,
+
+    pbkdf2 = pbkdf2,
+
+    pbkdf2_hex = function(pass, salt, iters, digest_len)
+        if type(pass) ~= 'string' or type(salt) ~= 'string' then
+            error("Usage: digest.pbkdf2_hex(pass, salt)")
+        end
+        return string.hex(pbkdf2(pass, salt, iters, digest_len))
+    end
 }
 
 for digest, name in pairs(digest_shortcuts) do
