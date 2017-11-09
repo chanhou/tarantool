@@ -1035,14 +1035,18 @@ int tarantoolSqlite3MakeIdxParts(SqliteIndex *pIndex, void *buf)
 	for (i = 0; i < n; i++) {
 		int col = pIndex->aiColumn[i];
 		const char *t;
+		struct coll * collation;
 		if (pk_forced_int == col)
 			t = "integer";
 		else
 			t = convertSqliteAffinity(aCol[col].affinity, aCol[col].notNull == 0);
+		collation = sqlite3FindCollSeq(NULL, pIndex->azColl[i], 0);
 
-		p = enc->encode_array(p, 2),
+		p = enc->encode_array(p, collation == NULL ? 2 : 3),
 		p = enc->encode_uint(p, col);
 		p = enc->encode_str(p, t, strlen(t));
+		if (collation != NULL)
+			p = enc->encode_uint(p, collation->id);
 	}
 	return (int)(p - base);
 }
