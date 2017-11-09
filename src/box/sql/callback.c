@@ -134,7 +134,7 @@ struct coll_plus_name_struct{
     char name[20]; /* max of possible name lengths */
 };
 static struct coll_plus_name_struct binary_coll_with_name = {{0, 0, COLL_TYPE_ICU, {0}, binCollFunc, 0, sizeof("BINARY")}, "BINARY"};
-static struct coll * binary_coll = (struct coll*)&binary_coll_with_name;
+struct coll * binary_coll = (struct coll*)&binary_coll_with_name;
 
 /*
  * Parameter zName points to a UTF-8 encoded string nName bytes long.
@@ -159,9 +159,6 @@ sqlite3FindCollSeq(sqlite3 * db, const char *zName, int create)
 	(void)create;
 	if (zName == NULL || sqlite3StrICmp(zName, "binary")==0){
 		return binary_coll;
-	}
-	if (sqlite3StrICmp(zName, "nocase")==0){
-		return coll_by_name("unicode", strlen("unicode"));
 	}
 	return coll_by_name(zName, strlen(zName));
 }
