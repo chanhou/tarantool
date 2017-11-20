@@ -1106,8 +1106,11 @@ vinyl_space_commit_alter(struct space *old_space, struct space *new_space)
 	pk->next = NULL;
 	struct vy_index *prev = pk;
 
+	pk->are_secondary_indexes_not_unique = true;
 	for (uint32_t i = 1; i < new_space->index_count; ++i) {
 		struct vy_index *index = vy_index(new_space->index[i]);
+		if (index->opts.is_unique)
+			pk->are_secondary_indexes_not_unique = false;
 		/* Recreate forward list. */
 		prev->next = index;
 		prev = index;
@@ -1502,14 +1505,18 @@ vy_replace_impl(struct vy_env *env, struct vy_tx *tx, struct space *space,
 				       request->tuple_end);
 	if (new_stmt == NULL)
 		return -1;
-	const char *key = tuple_extract_key(new_stmt, pk->key_def, NULL);
-	if (key == NULL) /* out of memory */
-		goto error;
-	uint32_t part_count = mp_decode_array(&key);
+	if (!pk->are_secondary_indexes_not_unique ||
+	    !rlist_empty(&space->on_replace)) {
+		const char *key = tuple_extract_key(new_stmt, pk->key_def,
+						    NULL);
+		if (key == NULL) /* out of memory */
+			goto error;
+		uint32_t part_count = mp_decode_array(&key);
 
-	/* Get full tuple from the primary index. */
-	if (vy_index_get(env, tx, pk, key, part_count, &old_stmt) != 0)
-		goto error;
+		/* Get full tuple from the primary index. */
+		if (vy_index_get(env, tx, pk, key, part_count, &old_stmt) != 0)
+			goto error;
+	}
 
 	/*
 	 * Replace in the primary index without explicit deletion
@@ -1651,14 +1658,38 @@ vy_read_iterator_next_full(struct vy_read_iterator *itr, struct vy_env *env,
 			   struct tuple **ret)
 {
 	assert(itr->index->id != 0);
+	struct tuple *pk_tuple;
 	*ret = NULL;
-	struct tuple *sk_tuple;
-	if (vy_read_iterator_next(itr, &sk_tuple) != 0)
-		return -1;
+	do {
+		struct tuple *sk_tuple;
+		if (vy_read_iterator_next(itr, &sk_tuple) != 0)
+			return -1;
+		if (sk_tuple == NULL) {
+			vy_read_iterator_cache_last(itr);
+			return 0;
+		}
+		if (vy_index_full_by_stmt(env, itr->tx, itr->index, sk_tuple,
+					  &pk_tuple) != 0)
+			return -1;
+		int64_t pk_lsn = vy_stmt_lsn(pk_tuple);
+		int64_t sk_lsn = vy_stmt_lsn(sk_tuple);
+		if (pk_tuple == NULL || pk_lsn < sk_lsn)
+			continue;
+		if (pk_lsn == sk_lsn)
+			break;
+		/*
+		 * Do not reread sk - it can be optimized
+		 * UPDATE.
+		 */
+		assert(pk_lsn >= sk_lsn);
+		if (vy_stmt_compare(pk_tuple, sk_tuple,
+				    itr->index->cmp_def) == 0)
+			break;
+		/* Dirty tuple is found - retry. */
+	} while (true);
 	vy_read_iterator_cache_last(itr);
-	if (sk_tuple == NULL)
-		return 0;
-	return vy_index_full_by_stmt(env, itr->tx, itr->index, sk_tuple, ret);
+	*ret = pk_tuple;
+	return 0;
 }
 
 /**
@@ -1781,7 +1812,13 @@ vy_delete(struct vy_env *env, struct vy_tx *tx, struct txn_stmt *stmt,
 	struct vy_index *index = vy_index_find_unique(space, request->index_id);
 	if (index == NULL)
 		return -1;
-	bool has_secondary = space->index_count > 1;
+	bool delete_from_secondary;
+	if (space->index_count > 1 &&
+	    (request->index_id != 0 || !pk->are_secondary_indexes_not_unique ||
+	     !rlist_empty(&space->on_replace)))
+		delete_from_secondary = true;
+	else
+		delete_from_secondary = false;
 	const char *key = request->key;
 	uint32_t part_count = mp_decode_array(&key);
 	if (vy_unique_key_validate(index, key, part_count))
@@ -1796,14 +1833,14 @@ vy_delete(struct vy_env *env, struct vy_tx *tx, struct txn_stmt *stmt,
 	 *   we need to extract secondary keys from the old tuple
 	 *   and pass them to indexes for deletion.
 	 */
-	if (has_secondary || !rlist_empty(&space->on_replace)) {
+	if (delete_from_secondary || !rlist_empty(&space->on_replace)) {
 		if (vy_index_full_by_key(env, tx, index, key, part_count,
 					 &stmt->old_tuple))
 			return -1;
 		if (stmt->old_tuple == NULL)
 			return 0;
 	}
-	if (has_secondary) {
+	if (delete_from_secondary) {
 		assert(stmt->old_tuple != NULL);
 		return vy_delete_impl(env, tx, space, stmt->old_tuple);
 	} else { /* Primary is the single index in the space. */
