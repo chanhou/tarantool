@@ -35,6 +35,7 @@
  */
 #include "sqliteInt.h"
 #include "src/box/session.h"
+#include "vdbeInt.h"
 
 /*
  * The code in this file only exists if we are not omitting the
@@ -305,12 +306,12 @@ static void
 reloadTableSchema(Parse * pParse, Table * pTab, const char *zName)
 {
 	Vdbe *v;
-	char *zWhere;
+	//char *zWhere;
 	int iDb;		/* Index of database containing pTab */
 #ifndef SQLITE_OMIT_TRIGGER
 	Trigger *pTrig;
 #endif
-
+	(void)zName;
 	v = sqlite3GetVdbe(pParse);
 	if (NEVER(v == 0))
 		return;
@@ -328,17 +329,27 @@ reloadTableSchema(Parse * pParse, Table * pTab, const char *zName)
 #endif
 
 	/* Drop the table and index from the internal schema.  */
-	sqlite3VdbeAddOp4(v, OP_DropTable, iDb, 0, 0, pTab->zName, 0);
+	//sqlite3VdbeAddOp4(v, OP_DropTable, iDb, 0, 0, pTab->zName, 0);
 
 	/* Reload the table, index and permanent trigger schemas. */
-	zWhere = sqlite3MPrintf(pParse->db, "tbl_name=%Q", zName);
-	if (!zWhere)
-		return;
-	sqlite3VdbeAddParseSchemaOp(v, iDb, zWhere);
-
+	//zWhere = sqlite3MPrintf(pParse->db, "tbl_name=%Q", zName);
+	//if (!zWhere)
+	//	return;
+        printf("%s\n", zName);
+        char *zNewName = sqlite3MPrintf(pParse->db, "%s", zName);
+        printf("%s \n", zNewName);
+        
+        //sqlite3VdbeAddParseSchemaOp(v, iDb, zWhere);
+	//sqlite3VdbeAddParseSchema2Op(v, iDb, pParse->nMem+1 ,4);
+	sqlite3VdbeAddRenameTableOp(v, pTab->tnum, zNewName);
+	//pTab->zName = (char*)zName;
 #ifndef SQLITE_OMIT_TRIGGER
+        //sqlite3 * db = v->db;
+        //Table *pSpaceTab = sqlite3HashFind(&db->mdb.pSchema->tblHash, "_SPACE");
+        //Trigger * pTrigSpace = sqlite3TriggersExist(pSpaceTab, TK_UPDATE, 0, 0);
+        //sqlite3CodeRowTrigger(pParse, pTrigSpace, TK_UPDATE, );
 	/* Don't use IN(...) in case SQLITE_OMIT_SUBQUERY is defined. */
-	sqlite3VdbeAddParseSchemaOp(v, 1, zWhere);
+	//sqlite3VdbeAddParseSchemaOp(v, 1, zWhere);
 #endif
 }
 
@@ -354,7 +365,7 @@ static int
 isSystemTable(Parse * pParse, const char *zName)
 {
 	if (sqlite3Strlen30(zName) > 6
-	    && 0 == sqlite3StrNICmp(zName, "sqlite_", 7)) {
+	    && 0 == sqlite3StrNICmp(zName, "_", 1)) {
 		sqlite3ErrorMsg(pParse, "table %s may not be altered", zName);
 		return 1;
 	}
@@ -439,9 +450,9 @@ sqlite3AlterRenameTable(Parse * pParse,	/* Parser context. */
 		goto exit_rename_table;
 	}
 	sqlite3BeginWriteOperation(pParse, false);
-	sqlite3ChangeCookie(pParse);
+	//sqlite3ChangeCookie(pParse);
 
-#if !defined(SQLITE_OMIT_FOREIGN_KEY) && !defined(SQLITE_OMIT_TRIGGER)
+#if !defined(SQLITE_OMIT_FOREIGN_KEY) && !defined(SQLITE_OMIT_TRIGGER) && 0
 	if (user_session->sql_flags & SQLITE_ForeignKeys) {
 		/* If foreign-key support is enabled, rewrite the CREATE TABLE
 		 * statements corresponding to all child tables of foreign key constraints

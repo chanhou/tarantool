@@ -4941,6 +4941,7 @@ case OP_Rewind: {        /* jump */
 		assert(pC->eCurType==CURTYPE_BTREE);
 		pCrsr = pC->uc.pCursor;
 		assert(pCrsr);
+		printf("PRGNO ROOT: %u", pCrsr->pgnoRoot);
 		rc = sqlite3BtreeFirst(pCrsr, &res);
 		pC->deferredMoveto = 0;
 		pC->cacheStatus = CACHE_STALE;
@@ -5633,6 +5634,63 @@ case OP_ParseSchema3: {
 	break;
 }
 
+/* Opcode: RenameTable P1 * * P4 *
+ * Synopsis: P1 = root, P4 = name
+ *
+ * Rename table P1 with name from P4.
+ * Invoke tarantoolSqlite3RenameTable, which updates tuple with
+ * corresponding space_id in _space: changes string of statement, which creates
+ * table and its name. Removes hash of old table name and updates SQL schema
+ * by calling sqlite3InitCallback.
+ */
+case OP_RenameTable: {
+        const char *zNewName;
+	unsigned space_id;
+	struct space *space;
+	const char *zName;
+	char *zSqlStmt;
+	Table *pTab;
+	int nRootPage;
+	InitData initData;
+	char *argv[4] = {NULL, NULL, NULL, NULL};
+	
+	space_id = SQLITE_PAGENO_TO_SPACEID(pOp->p1);
+	space = space_by_id(space_id);
+	assert(space);
+	zName = space_name(space);
+	assert(zName);
+	pTab = sqlite3HashFind(&db->mdb.pSchema->tblHash, zName);
+        printf(" %p");
+        printf("TRIG in vdbe %p\n", pTab->pTrigger);
+        printf("table name in vdbe: %s\n", pTab->zName);
+        printf("zname in vdbe: %s\n", zName);
+        
+        assert(pTab);
+        nRootPage = pTab->tnum;
+	zNewName = pOp->p4.z;
+	rc = tarantoolSqlite3RenameTable(pTab, zNewName, &zSqlStmt);
+	if (rc) goto abort_due_to_error;
+
+        sqlite3HashInsert(&db->mdb.pSchema->tblHash, zName, 0);
+        initData.db = db;
+	initData.pzErrMsg = &p->zErrMsg;
+	
+	assert(db->init.busy == 0);
+	db->init.busy = 1;
+	initData.rc = SQLITE_OK;
+        
+        argv[0] = (char*)zNewName;
+	argv[1] = (char*)&nRootPage;
+	argv[2] = zSqlStmt;
+	sqlite3InitCallback(&initData, 3, argv, NULL);
+	db->init.busy = 0;
+	rc = initData.rc;
+	if (rc) {
+		sqlite3ResetAllSchemasOfConnection(db);
+		goto abort_due_to_error;
+	}
+        break;
+}
 #if !defined(SQLITE_OMIT_ANALYZE)
 /* Opcode: LoadAnalysis P1 * * * *
  *

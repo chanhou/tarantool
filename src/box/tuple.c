@@ -73,6 +73,7 @@ static struct tuple_format_vtab tuple_format_runtime_vtab = {
 struct tuple *
 tuple_new(struct tuple_format *format, const char *data, const char *end)
 {
+        assert(format);
 	assert(format->vtab.destroy == tuple_format_runtime_vtab.destroy);
 
 	mp_tuple_assert(data, end);

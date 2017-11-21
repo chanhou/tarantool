@@ -107,7 +107,6 @@ sqlite3InitCallback(void *pInit, int argc, char **argv, char **NotUsed)
 		int rc;
 		sqlite3_stmt *pStmt;
 		TESTONLY(int rcp);	/* Return code from sqlite3_prepare() */
-
 		assert(db->init.busy);
 		db->init.newTnum = *((int *)argv[1]);
 		db->init.orphanTrigger = 0;

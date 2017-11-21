@@ -399,7 +399,7 @@ sqlite3DeleteFrom(Parse * pParse,	/* The parser context */
 		/* Do not start Tarantool's transaction in case of truncate optimization.
 		   This is workaround until system tables cannot be changes inside a
 		   transaction (_truncate).  */
-		pParse->initiateTTrans = false;
+		//pParse->initiateTTrans = false;
 	} else
 #endif				/* SQLITE_OMIT_TRUNCATE_OPTIMIZATION */
 	{

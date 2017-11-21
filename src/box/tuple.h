@@ -555,7 +555,6 @@ tuple_field_count(const struct tuple *tuple)
  * Get a field at the specific index in this tuple.
  * @param tuple tuple
  * @param fieldno the index of field to return
- * @param len pointer where the len of the field will be stored
  * @retval pointer to MessagePack data
  * @retval NULL when fieldno is out of range
  */

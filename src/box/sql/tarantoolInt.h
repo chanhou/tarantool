@@ -69,6 +69,7 @@ int tarantoolSqlite3Count(BtCursor * pCur, i64 * pnEntry);
 int tarantoolSqlite3Insert(BtCursor * pCur, const BtreePayload * pX);
 int tarantoolSqlite3Delete(BtCursor * pCur, u8 flags);
 int tarantoolSqlite3ClearTable(int iTable);
+int tarantoolSqlite3RenameTable(Table *pTab, const char *newName, char **sql_stmt);
 
 /* Compare against the index key under a cursor -
  * the key may span non-adjacent fields in a random order,

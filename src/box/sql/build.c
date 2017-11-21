@@ -377,7 +377,6 @@ sqlite3LocateTable(Parse * pParse,	/* context in which to report errors */
 	if (SQLITE_OK != sqlite3ReadSchema(pParse)) {
 		return 0;
 	}
-
 	p = sqlite3FindTable(pParse->db, zName);
 	if (p == 0) {
 		const char *zMsg =
@@ -722,7 +721,7 @@ int
 sqlite3CheckObjectName(Parse * pParse, const char *zName)
 {
 	if (!pParse->db->init.busy && pParse->nested == 0
-	    && 0 == sqlite3StrNICmp(zName, "sqlite_", 7)) {
+	    && 0 == sqlite3StrNICmp(zName, "_", 1)) {
 		sqlite3ErrorMsg(pParse,
 				"object name reserved for internal use: %s",
 				zName);
@@ -1806,8 +1805,10 @@ createSpace(Parse * pParse,
 		zFormatSz = 0;
 	} else {
 		zOptsSz = tarantoolSqlite3MakeTableOpts(p, zStmt, zOpts);
+		printf("zOpts: %s\n", zOpts);
 		zFormat = zOpts + zOptsSz + 1;
 		zFormatSz = tarantoolSqlite3MakeTableFormat(p, zFormat);
+		printf("zFormat: %s\n", zFormat);
 #if SQLITE_DEBUG
 		/* NUL-termination is necessary for VDBE-tracing facility only */
 		zOpts[zOptsSz] = 0;
@@ -2277,6 +2278,8 @@ sqlite3EndTable(Parse * pParse,	/* Parse context */
 		}
 #endif
 	}
+	printf("New tab root page: %u\n", p->tnum);
+	printf("Name %s\n", p->zName);
 }
 
 #ifndef SQLITE_OMIT_VIEW
@@ -2631,6 +2634,7 @@ sqlite3DropTable(Parse * pParse, SrcList * pName, int isView, int noErr)
 	if (noErr)
 		db->suppressErr++;
 	assert(isView == 0 || isView == LOCATE_VIEW);
+	printf("DROP TABLE");
 	pTab = sqlite3LocateTableItem(pParse, isView, &pName->a[0]);
 	if (noErr)
 		db->suppressErr--;
@@ -3238,7 +3242,7 @@ sqlite3CreateIndex(Parse * pParse,	/* All information about this parse */
 		     pLoop = pLoop->pNext, n++) {
 		}
 		zName =
-		    sqlite3MPrintf(db, "sqlite_autoindex_%s_%d", pTab->zName,
+		    sqlite3MPrintf(db, "primary_index", pTab->zName,
 				   n);
 		if (zName == 0) {
 			goto exit_create_index;

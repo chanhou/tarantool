@@ -432,6 +432,205 @@ int tarantoolSqlite3ClearTable(int iTable)
 }
 
 /*
+ * Function is used for modifying SQL statement, which creates table.
+ * This routine finds old table name in statement and replaces it with new one.
+ * Lengths of stings are nessecary for the reason that string of statement, which
+ * comes from _space and table names from ALTER statement are not null-terminated.
+ */
+static int replace_table_name(char* create_stmt, uint32_t create_stmt_len,
+                       const char* old_name, uint32_t old_name_len,
+                       const char* new_name, uint32_t new_name_len)
+{
+        assert(create_stmt);
+        assert(old_name);
+        assert(new_name);
+        assert(create_stmt_len > old_name_len);
+        
+        char *ptr = create_stmt;
+        char *sub_ptr = (char*)old_name;
+        uint8_t is_quoted;
+        uint32_t i, j;
+        for (i = 0; i <= (create_stmt_len - old_name_len); i++) {
+                while (i < (create_stmt_len - old_name_len) && *(ptr+i) != ' ') i++;
+                i++;
+                is_quoted = 0;
+                if (*(ptr+i) == '\"') {
+                        is_quoted = 1;
+                        i++;
+                }
+                for (j = 0; j < old_name_len; j++) {
+                        /* SQL statement which creates table, is held in _space
+                         * table as it was entered by user, without any modification.
+                         * In contrast, table name to be changed will come in
+                         * upper-case, if it isn't quoted.
+                         **/
+                        if(is_quoted) {
+                                if (*(ptr+i+j) != *(sub_ptr+j)) break;
+                        } else {
+                                if (sqlite3Toupper(*(ptr+i+j)) != *(sub_ptr+j)) break;
+                        }
+                }
+                /* Skip all spaces and make sure that the next token is ( either ",
+                 * which are the only tokens allowed to be after table name.
+                 */
+                uint32_t skip_spaces = 0;
+                while (*(ptr+i+j+skip_spaces) == ' ') skip_spaces++;
+                if (j == old_name_len && (*(ptr+i+j+skip_spaces) == '(' || *(ptr+i+j+skip_spaces) == '\"')) {
+                        char* temp_buf = (char*) malloc(create_stmt_len + new_name_len);
+                        memcpy(temp_buf, create_stmt, i);
+                        memcpy(temp_buf + i, new_name, new_name_len);
+                        memcpy(temp_buf + i + new_name_len,
+                               create_stmt + i + old_name_len, create_stmt_len - i - old_name_len);
+                        memcpy(create_stmt, temp_buf, create_stmt_len + new_name_len - old_name_len);
+                        create_stmt[create_stmt_len + new_name_len - old_name_len] = '\0';
+                        free(temp_buf);
+                        return i;
+                }
+        }
+        create_stmt[create_stmt_len] = '\0';
+        return 0;
+}
+
+static int tarantoolSqlite3RenameTrigger(const char *trig_name,
+                                         const char *new_table_name)
+{
+        box_tuple_t *tuple;
+        //int rc;
+        (void)new_table_name;
+        printf("CALLIGN RENAME TRIGGER\n");
+        char *key_begin = (char*)region_alloc(&fiber()->gc,
+                                              mp_sizeof_str(strlen(trig_name)) +
+                                              mp_sizeof_array(1));
+        char *key = mp_encode_array(key_begin, 1);
+        key = mp_encode_str(key, trig_name, strlen(trig_name));
+        
+        box_iterator_t *iter = box_index_iterator(BOX_TRIGGER_ID, 0, ITER_EQ,
+                                                  key_begin, key);
+        
+        if (box_iterator_next(iter, &tuple) != 0 || tuple == 0) {
+                return SQLITE_TARANTOOL_ERROR;
+        }
+        assert(tuple_field_count(tuple) == 2);
+        const char *field = box_tuple_field(tuple, 2);
+        uint32_t trigger_stmt_len;
+        const char *trigger_stmt = mp_decode_str(&field, &trigger_stmt_len);
+        //printf("TRIGGER: %s", );
+        printf("TRIGGER STMT: %s\n", trigger_stmt);
+        box_iterator_free(iter);
+        return 0;
+}
+
+/*
+ * Rename the table in _space. Replace tuple with corresponding id with
+ * new name and statement fields and insert back.
+ * */
+int tarantoolSqlite3RenameTable(Table *pTab, const char *new_name,
+                                char **sql_stmt)
+{
+        int space_id = SQLITE_PAGENO_TO_SPACEID(pTab->tnum);
+	box_tuple_t *tuple;
+	int rc;
+        
+        char *key_begin = (char*)region_alloc(&fiber()->gc,
+                                              mp_sizeof_uint(space_id) +
+                                              mp_sizeof_array(1));
+        char *key = mp_encode_array(key_begin, 1);
+        key = mp_encode_uint(key, space_id);
+	
+	box_iterator_t *iter = box_index_iterator(BOX_SPACE_ID, 0, ITER_EQ,
+						  key_begin, key);
+	if (box_iterator_next(iter, &tuple) != 0 || tuple == 0) {
+		return SQLITE_TARANTOOL_ERROR;
+	}
+        /* Code below relies on format of _space. If number of fields or their
+         * order will ever change, this code should be changed too.
+         */
+	assert(tuple_field_count(tuple) == 7);
+	const char *field = box_tuple_field(tuple, 1);
+	uint32_t owner_id = mp_decode_uint(&field);
+        field = box_tuple_field(tuple, 3);
+        uint32_t engine_len;
+        const char *engine = mp_decode_str(&field, &engine_len);
+        field = box_tuple_field(tuple, 4);
+        uint32_t column_count = mp_decode_uint(&field);
+	const char *sql_stmt_old = box_tuple_field(tuple, 5);
+	
+	if (sql_stmt_old == NULL || mp_typeof(*sql_stmt_old) != MP_MAP) {
+		return SQLITE_TARANTOOL_ERROR;
+	}
+	uint32_t map_size = mp_decode_map(&sql_stmt_old);
+        assert(map_size == 1);
+        (void)map_size;
+        uint32_t sql_stmt_decoded_len;
+        uint32_t key_len;
+        const char *sql_str = mp_decode_str(&sql_stmt_old, &key_len);
+        assert(sqlite3StrNICmp(sql_str, "sql", 3));
+        (void)sql_str;
+        const char *sql_stmt_old_decoded = mp_decode_str(&sql_stmt_old,
+                                                     &sql_stmt_decoded_len);
+        (void)sql_stmt_old_decoded;
+        const char* old_name = box_tuple_field(tuple, 2);
+        uint32_t old_name_len;
+        old_name = mp_decode_str(&old_name, &old_name_len);
+        uint32_t new_name_len = strlen(new_name);
+        uint32_t sql_stmt_new_len = sql_stmt_decoded_len + new_name_len - old_name_len;
+        char *sql_stmt_new = (char*)region_alloc(&fiber()->gc,
+                                                 sql_stmt_decoded_len + new_name_len);
+        memcpy(sql_stmt_new, sql_stmt_old_decoded, sql_stmt_decoded_len);
+        
+        if (0 == replace_table_name(sql_stmt_new, sql_stmt_decoded_len, old_name,
+			 old_name_len, new_name, new_name_len)) {
+                return SQLITE_TARANTOOL_ERROR;
+        }
+        pTab->zName = (char*)new_name;
+        /* Construct new msgpack to insert to _space. */
+	char *new_tuple = (char*)region_alloc(&fiber()->gc, mp_sizeof_array(7) +
+                                              mp_sizeof_uint(space_id) +
+                                              mp_sizeof_uint(owner_id) +
+                                              mp_sizeof_str(new_name_len) +
+                                              mp_sizeof_str(engine_len) +
+                                              mp_sizeof_uint(column_count) +
+                                              mp_sizeof_map(1) +
+                                              mp_sizeof_str(3) +
+                                              mp_sizeof_str(sql_stmt_new_len) +
+                                              tarantoolSqlite3MakeTableFormat(pTab, NULL));
+	char *new_tuple_end = new_tuple;
+	new_tuple_end = mp_encode_array(new_tuple_end, 7);
+	new_tuple_end = mp_encode_uint(new_tuple_end, space_id);
+	new_tuple_end = mp_encode_uint(new_tuple_end, owner_id);
+	new_tuple_end = mp_encode_str(new_tuple_end, new_name, new_name_len);
+        new_tuple_end = mp_encode_str(new_tuple_end, engine, engine_len);
+	new_tuple_end = mp_encode_uint(new_tuple_end, column_count);
+        new_tuple_end = mp_encode_map(new_tuple_end, 1);
+	new_tuple_end = mp_encode_str(new_tuple_end, "sql", 3);
+	new_tuple_end = mp_encode_str(new_tuple_end, sql_stmt_new,
+                                      sql_stmt_new_len);
+	new_tuple_end += tarantoolSqlite3MakeTableFormat(pTab, new_tuple_end);
+        mp_fprint(stdout, new_tuple);
+
+        rc = box_replace(BOX_SPACE_ID, new_tuple, new_tuple_end, &tuple);
+	
+        
+        if (rc != 0 || tuple == NULL) {
+                return SQLITE_TARANTOOL_ERROR;
+        }
+        *sql_stmt = sql_stmt_new;
+        sql_stmt_new[sql_stmt_decoded_len + new_name_len - old_name_len] = '\0';
+        box_iterator_free(iter);
+        
+        /* Also rename all trigger created on this table.*/
+        Trigger *trig;
+        for (trig = pTab->pTrigger; trig; trig = trig->pNext) {
+                rc = tarantoolSqlite3RenameTrigger(pTab->pTrigger->zName, new_name);
+                if (rc != 0) {
+                        return SQLITE_TARANTOOL_ERROR;
+                }
+        }
+        
+	return SQLITE_OK;
+}
+
+/*
  * Performs exactly as extract_key + sqlite3VdbeCompareMsgpack,
  * only faster.
  */
@@ -622,7 +821,7 @@ cursor_seek(BtCursor *pCur, int *pRes, enum iterator_type type,
 	uint32_t space_id = SQLITE_PAGENO_TO_SPACEID(pCur->pgnoRoot);
 	uint32_t index_id = SQLITE_PAGENO_TO_INDEXID(pCur->pgnoRoot);
 	size_t key_size = 0;
-
+        printf("SPACE ID: %u\n", space_id);
 	/* Close existing iterator, if any */
 	if (c && c->iter) {
 		box_iterator_free(c->iter);

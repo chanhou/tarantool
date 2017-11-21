@@ -406,7 +406,14 @@ sqlite3Insert(Parse * pParse,	/* Parser context */
 	 * inserted into is a view
 	 */
 #ifndef SQLITE_OMIT_TRIGGER
+        Table * ptab1 = sqlite3HashFind(&pParse->db->mdb.pSchema->tblHash, pTab->zName);
+	printf("TRIGGER INSERT1: %p\n", ptab1->pTrigger);
+	printf("TRIGGER INSERT: %p\n", pTab->pTrigger);
+	printf("table name: %s\n", ptab1->zName);
 	pTrigger = sqlite3TriggersExist(pTab, TK_INSERT, 0, &tmask);
+	printf("TRIGGER INSERT: %p\n", pTrigger);
+	printf("TRIGGER INSERT1: %p\n", ptab1->pTrigger);
+	
 	isView = pTab->pSelect != 0;
 #else
 #define pTrigger 0

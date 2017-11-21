@@ -1662,7 +1662,7 @@ whereLoopPrint(WhereLoop * p, WhereClause * pWC)
 			   pItem->zAlias ? pItem->zAlias : pTab->zName);
 	const char *zName;
 	if (p->pIndex && (zName = p->pIndex->zName) != 0) {
-		if (strncmp(zName, "sqlite_autoindex_", 17) == 0) {
+		if (strncmp(zName, "primary_index_", 17) == 0) {
 			int i = sqlite3Strlen30(zName) - 1;
 			while (zName[i] != '_')
 				i--;

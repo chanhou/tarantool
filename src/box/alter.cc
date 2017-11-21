@@ -1233,6 +1233,7 @@ on_replace_dd_space(struct trigger * /* trigger */, void *event)
 	struct tuple *old_tuple = stmt->old_tuple;
 	struct tuple *new_tuple = stmt->new_tuple;
 	struct region *region = &fiber()->gc;
+	printf("ON_REPLACE TRIGGER: \n");
 	/*
 	 * Things to keep in mind:
 	 * - old_tuple is set only in case of UPDATE.  For INSERT
@@ -1314,6 +1315,8 @@ on_replace_dd_space(struct trigger * /* trigger */, void *event)
 						 region);
 		auto def_guard =
 			make_scoped_guard([=] { space_def_delete(def); });
+		printf("space_def sql: %s \n", def->opts.sql);
+		
 		/*
 		 * Check basic options. Assume the space to be
 		 * empty, because we can not calculate here
